@@ -18,17 +18,34 @@ const ORDER_STATUSES = ['placed', 'inProgress', 'delivered', 'cancelled'];
  */
 const getAllOrders = async (req, res) => {
     try {
-        const { limit = 100, status } = req.query;
+        const { limit = 100, status, phone } = req.query;
 
         let params = {
             TableName: ORDERS_TABLE,
             Limit: parseInt(limit)
         };
 
+        const filterExpressions = [];
+        const expressionAttributeNames = {};
+        const expressionAttributeValues = {};
+
         if (status && ORDER_STATUSES.includes(status)) {
-            params.FilterExpression = '#status = :status';
-            params.ExpressionAttributeNames = { '#status': 'status' };
-            params.ExpressionAttributeValues = { ':status': status };
+            filterExpressions.push('#status = :status');
+            expressionAttributeNames['#status'] = 'status';
+            expressionAttributeValues[':status'] = status;
+        }
+
+        if (phone) {
+            filterExpressions.push('customer.phone = :phone');
+            expressionAttributeValues[':phone'] = phone;
+        }
+
+        if (filterExpressions.length > 0) {
+            params.FilterExpression = filterExpressions.join(' AND ');
+            if (Object.keys(expressionAttributeNames).length > 0) {
+                params.ExpressionAttributeNames = expressionAttributeNames;
+            }
+            params.ExpressionAttributeValues = expressionAttributeValues;
         }
 
         const result = await dynamoDB.scan(params).promise();
