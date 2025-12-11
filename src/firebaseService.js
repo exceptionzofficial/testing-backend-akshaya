@@ -122,7 +122,30 @@ const sendNotificationToRider = async (fcmToken, title, body, data = {}) => {
     }
 };
 
+const getFirebaseStatus = () => {
+    const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = process.env;
+
+    let privateKeyValid = false;
+    if (FIREBASE_PRIVATE_KEY) {
+        const key = FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+        privateKeyValid = key.includes('BEGIN PRIVATE KEY') && key.includes('END PRIVATE KEY');
+    }
+
+    return {
+        timestamp: new Date().toISOString(),
+        isInitialized: admin.apps.length > 0,
+        appsCount: admin.apps.length,
+        envCheck: {
+            hasProjectId: !!FIREBASE_PROJECT_ID,
+            hasClientEmail: !!FIREBASE_CLIENT_EMAIL,
+            hasPrivateKey: !!FIREBASE_PRIVATE_KEY,
+            privateKeyValidFormat: privateKeyValid
+        }
+    };
+};
+
 module.exports = {
     admin,
-    sendNotificationToRider
+    sendNotificationToRider,
+    getFirebaseStatus
 };

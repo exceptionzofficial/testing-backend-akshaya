@@ -112,6 +112,11 @@ app.delete('/api/riders/:id', ridersHandler.deleteRider);
 // ============================================
 // DEBUG/TEST ROUTES (Remove in production)
 // ============================================
+app.get('/api/test/firebase-status', (req, res) => {
+  const { getFirebaseStatus } = require('./src/firebaseService');
+  res.json(getFirebaseStatus());
+});
+
 app.get('/api/test/notification/:riderId', async (req, res) => {
   try {
     const { riderId } = req.params;
