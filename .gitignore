@@ -46,3 +46,4 @@ coverage/
 tmp/
 temp/
 *.tmp
+config/serviceAccountKey.json

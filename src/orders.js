@@ -40,6 +40,11 @@ const getAllOrders = async (req, res) => {
             expressionAttributeValues[':phone'] = phone;
         }
 
+        if (req.query.riderId) {
+            filterExpressions.push('riderId = :riderId');
+            expressionAttributeValues[':riderId'] = req.query.riderId;
+        }
+
         if (filterExpressions.length > 0) {
             params.FilterExpression = filterExpressions.join(' AND ');
             if (Object.keys(expressionAttributeNames).length > 0) {
@@ -312,6 +317,10 @@ const updateOrderStatus = async (req, res) => {
  * Assign rider to order
  * @route PATCH /api/orders/:id/assign
  */
+/**
+ * Assign rider to order
+ * @route PATCH /api/orders/:id/assign
+ */
 const assignRider = async (req, res) => {
     try {
         const { id } = req.params;
@@ -339,6 +348,7 @@ const assignRider = async (req, res) => {
             });
         }
 
+        // 1. Update Order
         const params = {
             TableName: ORDERS_TABLE,
             Key: { id },
@@ -354,11 +364,54 @@ const assignRider = async (req, res) => {
         };
 
         const result = await dynamoDB.update(params).promise();
+        const order = result.Attributes;
+
+        // 2. Fetch Rider to get FCM Token & Send Notification
+        console.log('=== NOTIFICATION FLOW START ===');
+        console.log(`Order ID: ${id}, Rider ID: ${riderId}, Rider Name: ${riderName}`);
+
+        try {
+            const { sendNotificationToRider } = require('./firebaseService');
+
+            const riderParams = {
+                TableName: process.env.DYNAMODB_RIDERS_TABLE || 'satvamirtham-riders',
+                Key: { id: riderId }
+            };
+            console.log('Looking up rider with params:', JSON.stringify(riderParams));
+
+            const riderResult = await dynamoDB.get(riderParams).promise();
+            const rider = riderResult.Item;
+
+            console.log(`Rider lookup for ${riderId}:`, rider ? 'Found' : 'Not found');
+
+            if (rider) {
+                console.log(`Rider data:`, JSON.stringify({ id: rider.id, name: rider.name, hasFcmToken: !!rider.fcmToken }));
+
+                if (rider.fcmToken) {
+                    console.log(`Sending notification to rider ${riderId} with token: ${rider.fcmToken.substring(0, 20)}...`);
+                    const notifResult = await sendNotificationToRider(
+                        rider.fcmToken,
+                        'New Order Assigned! 📦',
+                        `Order #${id.slice(-6)} is ready for pickup.`,
+                        { orderId: id, riderName: riderName, type: 'order_assigned' }
+                    );
+                    console.log(`✅ Notification result:`, notifResult ? `Sent - ${notifResult}` : 'Failed');
+                } else {
+                    console.warn(`⚠️ Rider ${riderId} has no FCM token stored`);
+                }
+            } else {
+                console.warn(`⚠️ Rider ${riderId} not found in database`);
+            }
+        } catch (notificationError) {
+            console.error('❌ Notification Error (Non-blocking):', notificationError.message);
+            console.error('Stack:', notificationError.stack);
+        }
+        console.log('=== NOTIFICATION FLOW END ===');
 
         res.status(200).json({
             success: true,
             message: 'Rider assigned successfully',
-            data: result.Attributes
+            data: order
         });
 
     } catch (error) {

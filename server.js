@@ -49,8 +49,16 @@ app.get('/health', (req, res) => {
 });
 
 // Auth Routes
+// Auth Routes
 app.post('/api/auth/register', registerHandler);
 app.post('/api/auth/login', loginHandler);
+
+// Rider Auth Routes
+// Rider Auth Routes
+const riderAuth = require('./src/riderAuth');
+app.post('/api/rider/auth/register', riderAuth.registerRider);
+app.post('/api/rider/auth/login', riderAuth.loginRider);
+app.post('/api/rider/auth/fcm', riderAuth.updateFCMToken);
 
 // Legacy Menu Routes (for backward compatibility)
 app.get('/api/menu', menuHandler.getAllMenuItems);
@@ -100,6 +108,71 @@ app.post('/api/riders', ridersHandler.createRider);
 app.put('/api/riders/:id', ridersHandler.updateRider);
 app.patch('/api/riders/:id/status', ridersHandler.updateRiderStatus);
 app.delete('/api/riders/:id', ridersHandler.deleteRider);
+
+// ============================================
+// DEBUG/TEST ROUTES (Remove in production)
+// ============================================
+app.get('/api/test/notification/:riderId', async (req, res) => {
+  try {
+    const { riderId } = req.params;
+    const AWS = require('aws-sdk');
+    const { sendNotificationToRider } = require('./src/firebaseService');
+
+    const dynamoDB = new AWS.DynamoDB.DocumentClient({
+      region: process.env.AWS_REGION,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    });
+
+    // Get rider
+    const riderResult = await dynamoDB.get({
+      TableName: process.env.DYNAMODB_RIDERS_TABLE || 'satvamirtham-riders',
+      Key: { id: riderId }
+    }).promise();
+
+    const rider = riderResult.Item;
+
+    if (!rider) {
+      return res.json({
+        success: false,
+        message: 'Rider not found',
+        riderId
+      });
+    }
+
+    console.log('DEBUG - Rider found:', JSON.stringify(rider, null, 2));
+
+    if (!rider.fcmToken) {
+      return res.json({
+        success: false,
+        message: 'Rider has no FCM token stored',
+        rider: { id: rider.id, name: rider.name, fcmToken: rider.fcmToken }
+      });
+    }
+
+    // Send test notification
+    const notifResult = await sendNotificationToRider(
+      rider.fcmToken,
+      'Test Notification 🧪',
+      'This is a test from the debug endpoint',
+      { type: 'test', timestamp: new Date().toISOString() }
+    );
+
+    res.json({
+      success: true,
+      message: 'Test notification sent',
+      rider: { id: rider.id, name: rider.name, fcmTokenPrefix: rider.fcmToken?.substring(0, 20) + '...' },
+      notificationResult: notifResult
+    });
+  } catch (error) {
+    console.error('Test notification error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      stack: error.stack
+    });
+  }
+});
 
 // 404 handler
 app.use((req, res) => {
