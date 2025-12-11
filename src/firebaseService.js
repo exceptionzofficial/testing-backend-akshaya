@@ -2,43 +2,72 @@ const admin = require('firebase-admin');
 const path = require('path');
 require('dotenv').config();
 
-let serviceAccount;
-
-try {
-    // Try to require the file first (Local Dev)
-    // Using try/catch for the require itself
-    try {
-        serviceAccount = require('../config/serviceAccountKey.json');
-    } catch (err) {
-        // File not found, ignore
+const initializeFirebase = () => {
+    if (admin.apps.length > 0) {
+        return; // Already initialized
     }
 
-    // If no file, check env vars (Production / Vercel)
-    if (!serviceAccount && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-        console.log('Using Environment Variables for Firebase Config');
-        serviceAccount = {
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-        };
+    let serviceAccount;
+
+    // 1. Try Local File
+    try {
+        serviceAccount = require('../config/serviceAccountKey.json');
+        console.log('Using local serviceAccountKey.json');
+    } catch (err) {
+        console.log('Local serviceAccountKey.json not found, checking environment variables...');
+    }
+
+    // 2. Try Environment Variables
+    if (!serviceAccount) {
+        const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = process.env;
+
+        // Log presence of keys (not values) for debugging
+        console.log('Checking Environment Variables:', {
+            hasProjectId: !!FIREBASE_PROJECT_ID,
+            hasClientEmail: !!FIREBASE_CLIENT_EMAIL,
+            hasPrivateKey: !!FIREBASE_PRIVATE_KEY
+        });
+
+        if (FIREBASE_PROJECT_ID && FIREBASE_CLIENT_EMAIL && FIREBASE_PRIVATE_KEY) {
+            console.log('Found Firebase Environment Variables');
+            serviceAccount = {
+                projectId: FIREBASE_PROJECT_ID,
+                clientEmail: FIREBASE_CLIENT_EMAIL,
+                privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+            };
+        } else {
+            console.error('❌ Missing Firebase Environment Variables');
+        }
     }
 
     if (serviceAccount) {
-        if (admin.apps.length === 0) {
+        try {
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount)
             });
-            console.log('Firebase Admin Initialized Successfully');
+            console.log('✅ Firebase Admin Initialized Successfully');
+        } catch (error) {
+            console.error('❌ Firebase Admin Initialization Failed:', error);
         }
     } else {
-        console.warn('⚠️ Firebase credentials not found. Notification service will not work.');
-        console.warn('Set FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL env vars or provide config/serviceAccountKey.json');
+        console.error('❌ Could not initialize Firebase: No credentials found (File or Env)');
     }
-} catch (error) {
-    console.error('Firebase Admin Initialization Error:', error);
-}
+};
+
+// Attempt initialization on load
+initializeFirebase();
 
 const sendNotificationToRider = async (fcmToken, title, body, data = {}) => {
+    // Ensure initialized
+    if (admin.apps.length === 0) {
+        console.log('⚠️ Firebase not initialized. Attempting re-initialization...');
+        initializeFirebase();
+        if (admin.apps.length === 0) {
+            console.error('❌ Cannot send notification: Firebase not initialized.');
+            return null;
+        }
+    }
+
     if (!fcmToken) {
         console.warn('No FCM token provided for notification');
         return null;
