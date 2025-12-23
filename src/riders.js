@@ -1,4 +1,5 @@
 const AWS = require('aws-sdk');
+const bcrypt = require('bcryptjs');
 
 // Configure AWS DynamoDB
 const dynamoDB = new AWS.DynamoDB.DocumentClient({
@@ -34,12 +35,18 @@ const getAllRiders = async (req, res) => {
 
         const result = await dynamoDB.scan(params).promise();
 
+        // Remove password from response
+        const riders = (result.Items || []).map(rider => {
+            const { password, ...riderWithoutPassword } = rider;
+            return riderWithoutPassword;
+        });
+
         res.status(200).json({
             success: true,
             message: 'Riders fetched successfully',
             data: {
-                riders: result.Items || [],
-                count: result.Count || 0,
+                riders,
+                count: riders.length,
                 statuses: RIDER_STATUSES
             }
         });
@@ -76,10 +83,13 @@ const getRiderById = async (req, res) => {
             });
         }
 
+        // Remove password from response
+        const { password, ...riderWithoutPassword } = result.Item;
+
         res.status(200).json({
             success: true,
             message: 'Rider fetched successfully',
-            data: result.Item
+            data: riderWithoutPassword
         });
 
     } catch (error) {
@@ -101,18 +111,30 @@ const createRider = async (req, res) => {
         const {
             name,
             phone,
+            password,
             email,
             vehicleType,
             vehicleNumber
         } = req.body;
 
         // Validation
-        if (!name || !phone) {
+        if (!name || !phone || !password) {
             return res.status(400).json({
                 success: false,
-                message: 'Name and phone are required'
+                message: 'Name, phone, and password are required'
             });
         }
+
+        if (password.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password must be at least 6 characters'
+            });
+        }
+
+        // Hash password
+        const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
 
         // Generate unique ID
         const id = `RDR${Date.now()}`;
@@ -121,6 +143,7 @@ const createRider = async (req, res) => {
             id,
             name,
             phone,
+            password: hashedPassword,
             email: email || '',
             vehicleType: vehicleType || 'Bike',
             vehicleNumber: vehicleNumber || '',
@@ -141,10 +164,13 @@ const createRider = async (req, res) => {
 
         await dynamoDB.put(params).promise();
 
+        // Don't return password in response
+        const { password: _, ...riderWithoutPassword } = rider;
+
         res.status(201).json({
             success: true,
             message: 'Rider created successfully',
-            data: rider
+            data: riderWithoutPassword
         });
 
     } catch (error) {

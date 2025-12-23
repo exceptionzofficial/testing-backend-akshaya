@@ -151,7 +151,8 @@ const registerRider = async (req, res) => {
 
 /**
  * Login Rider
- * Authenticates against Users table, then fetches profile from Riders table
+ * First tries to authenticate from RIDERS_TABLE (admin-created riders)
+ * Falls back to USERS_TABLE for backwards compatibility
  * @route POST /api/rider/auth/login
  */
 const loginRider = async (req, res) => {
@@ -162,7 +163,46 @@ const loginRider = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone and password are required' });
         }
 
-        // 1. Get User from Users Table
+        // 1. First, try to find rider in RIDERS_TABLE (admin-created riders)
+        const ridersResult = await dynamoDB.scan({
+            TableName: RIDERS_TABLE,
+            FilterExpression: 'phone = :phone AND isActive = :isActive',
+            ExpressionAttributeValues: {
+                ':phone': phone,
+                ':isActive': true
+            }
+        }).promise();
+
+        const riderFromTable = ridersResult.Items && ridersResult.Items[0];
+
+        // If rider found in RIDERS_TABLE and has password (admin-created)
+        if (riderFromTable && riderFromTable.password) {
+            const validPassword = await bcrypt.compare(password, riderFromTable.password);
+            if (!validPassword) {
+                return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            }
+
+            // Generate token using rider data
+            const token = generateToken({
+                phone: riderFromTable.phone,
+                name: riderFromTable.name,
+                riderId: riderFromTable.id
+            });
+
+            // Remove password from response
+            const { password: _, ...riderWithoutPassword } = riderFromTable;
+
+            return res.status(200).json({
+                success: true,
+                message: 'Login successful',
+                data: {
+                    rider: riderWithoutPassword,
+                    token
+                }
+            });
+        }
+
+        // 2. Fallback: Check USERS_TABLE (legacy registered riders)
         const userResult = await dynamoDB.get({
             TableName: USERS_TABLE,
             Key: { phone }
@@ -174,13 +214,13 @@ const loginRider = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Invalid credentials or not a rider account' });
         }
 
-        // 2. Verify Password
+        // Verify Password
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
 
-        // 3. Get Rider Profile from Riders Table
+        // Get Rider Profile from Riders Table
         let riderProfile = null;
         if (user.riderId) {
             const riderResult = await dynamoDB.get({
@@ -190,14 +230,14 @@ const loginRider = async (req, res) => {
             riderProfile = riderResult.Item;
         }
 
-        // 4. Generate Token
+        // Generate Token
         const token = generateToken(user);
 
         res.status(200).json({
             success: true,
             message: 'Login successful',
             data: {
-                rider: riderProfile || { id: user.riderId, name: user.name, phone: user.phone }, // Fallback if profile missing
+                rider: riderProfile || { id: user.riderId, name: user.name, phone: user.phone },
                 token
             }
         });
@@ -216,8 +256,8 @@ const updateFCMToken = async (req, res) => {
         console.log('FCM Token Update Request:', { riderId, fcmToken: fcmToken ? fcmToken.substring(0, 20) + '...' : 'missing' });
 
         if (!riderId || !fcmToken) {
-            return res.status(400).json({ 
-                success: false, 
+            return res.status(400).json({
+                success: false,
                 message: 'Missing riderId or fcmToken',
                 received: { riderId: !!riderId, fcmToken: !!fcmToken }
             });
@@ -236,16 +276,16 @@ const updateFCMToken = async (req, res) => {
 
         const result = await dynamoDB.update(params).promise();
         console.log('FCM Token updated successfully for rider:', riderId);
-        
-        res.status(200).json({ 
-            success: true, 
+
+        res.status(200).json({
+            success: true,
             message: 'FCM Token updated successfully',
             data: result.Attributes
         });
     } catch (error) {
         console.error('Update FCM Error:', error);
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             message: 'Server error',
             error: error.message
         });
