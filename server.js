@@ -11,6 +11,7 @@ const packagesHandler = require('./src/packages');
 const singlesHandler = require('./src/singles');
 const ordersHandler = require('./src/orders');
 const ridersHandler = require('./src/riders');
+const usersHandler = require('./src/users');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -108,6 +109,12 @@ app.post('/api/riders', ridersHandler.createRider);
 app.put('/api/riders/:id', ridersHandler.updateRider);
 app.patch('/api/riders/:id/status', ridersHandler.updateRiderStatus);
 app.delete('/api/riders/:id', ridersHandler.deleteRider);
+
+// Users Routes
+app.get('/api/users/stats', usersHandler.getUserStats);
+app.get('/api/users', usersHandler.getAllUsers);
+app.get('/api/users/:phone', usersHandler.getUserByPhone);
+app.patch('/api/users/:phone/status', usersHandler.updateUserStatus);
 
 // ============================================
 // DEBUG/TEST ROUTES (Remove in production)
