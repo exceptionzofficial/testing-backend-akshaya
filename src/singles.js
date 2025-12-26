@@ -34,26 +34,37 @@ const getAllSingles = async (req, res) => {
     try {
         const { includeHidden } = req.query;
 
-        let filterExpression = '#type = :type AND isActive = :isActive';
-        const expressionAttributeValues = {
-            ':type': 'single',
-            ':isActive': true
-        };
+        // Base filter - only single type and active items
+        let params;
 
-        // If not admin view, only show visible items
-        if (includeHidden !== 'true') {
-            filterExpression += ' AND isVisible = :isVisible';
-            expressionAttributeValues[':isVisible'] = true;
+        if (includeHidden === 'true') {
+            // Return ALL items regardless of visibility (for customer app to show out of stock)
+            params = {
+                TableName: MENU_TABLE,
+                FilterExpression: '#type = :type AND isActive = :isActive',
+                ExpressionAttributeNames: {
+                    '#type': 'type'
+                },
+                ExpressionAttributeValues: {
+                    ':type': 'single',
+                    ':isActive': true
+                }
+            };
+        } else {
+            // Only show visible items (default behavior)
+            params = {
+                TableName: MENU_TABLE,
+                FilterExpression: '#type = :type AND isActive = :isActive AND (isVisible = :isVisible OR attribute_not_exists(isVisible))',
+                ExpressionAttributeNames: {
+                    '#type': 'type'
+                },
+                ExpressionAttributeValues: {
+                    ':type': 'single',
+                    ':isActive': true,
+                    ':isVisible': true
+                }
+            };
         }
-
-        const params = {
-            TableName: MENU_TABLE,
-            FilterExpression: filterExpression,
-            ExpressionAttributeNames: {
-                '#type': 'type'
-            },
-            ExpressionAttributeValues: expressionAttributeValues
-        };
 
         const result = await dynamoDB.scan(params).promise();
 

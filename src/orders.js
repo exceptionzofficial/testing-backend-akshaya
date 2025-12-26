@@ -179,6 +179,7 @@ const createOrder = async (req, res) => {
             totalAmount,
             paymentMethod,
             deliveryAddress,
+            deliveryInfo,
             notes
         } = req.body;
 
@@ -214,6 +215,11 @@ const createOrder = async (req, res) => {
             riderName: null,
             totalAmount: parseFloat(totalAmount),
             paymentMethod: paymentMethod || 'Cash',
+            deliveryInfo: deliveryInfo || {
+                date: new Date().toLocaleDateString(),
+                time: 'ASAP',
+                isToday: true
+            },
             notes: notes || '',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
